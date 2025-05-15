@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
@@ -9,13 +10,18 @@ class JournalNotifier extends StateNotifier<JournalState> {
   final JournalRepository _repository;
 
   JournalNotifier(this._repository)
-      : super(JournalState(entries: [], selectedMonth: DateTime.now())) {
+      : super(JournalState(
+          entries: [],
+          selectedMonth: DateTime.now(),
+          actuallySelectedDay: DateTime.now(),
+        )) {
     loadEntries();
   }
 
   Future<void> loadEntries() async {
     final entries = await _repository.getEntries();
-    state = state.copyWith(entries: entries); // Using copyWith from JournalState
+    state =
+        state.copyWith(entries: entries); // Using copyWith from JournalState
   }
 
   Future<void> addEntry(JournalEntry entry) async {
@@ -36,16 +42,16 @@ class JournalNotifier extends StateNotifier<JournalState> {
         .toList();
 
     if (monthEntries.isEmpty) {
-      print("No entries for the selected month to export.");
+      debugPrint("No entries for the selected month to export.");
       return null; // Or throw an exception / return a specific message
     }
-
+ 
     final monthName = DateFormat('MMMM_yyyy').format(state.selectedMonth);
 
     try {
       return await _repository.exportToExcel(monthEntries, monthName);
     } catch (e) {
-      print("Error in JournalNotifier.exportToExcel: $e");
+      debugPrint("Error in JournalNotifier.exportToExcel: $e");
       return null;
     }
   }
@@ -62,6 +68,10 @@ class JournalNotifier extends StateNotifier<JournalState> {
     }
     // If entries are month-specific and not all loaded at once, you might reload here.
     // But your current loadEntries fetches all.
+  }
+
+  void updateActuallySelectedDay(DateTime? newSelectedDay) {
+    state = state.copyWith(actuallySelectedDay: newSelectedDay);
   }
 
   bool isFutureDate(DateTime date) {
