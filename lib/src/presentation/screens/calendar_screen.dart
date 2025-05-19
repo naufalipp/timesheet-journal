@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart'; // For DateFormat if needed here
+// import 'package:timesheet_journal/src/backup.dart';
 import 'package:timesheet_journal/src/domain/entities/journal_entry.dart';
+import 'package:timesheet_journal/src/presentation/notifiers/journal_notifier.dart';
 
 import '../providers/journal_provider.dart';
 import 'journal_list_screen.dart';
@@ -171,73 +173,77 @@ class CalendarScreen extends ConsumerWidget {
                         final String rightText =
                             DateFormat('dd/MM/yy h:mm a').format(entry.date);
 
-                        return Card(
-                          elevation: 2,
-                          margin: const EdgeInsets.symmetric(
-                              vertical: 5.0, horizontal: 8.0),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10.0),
-                          ),
-                          child: InkWell(
-                            // Added InkWell for tap effect
-                            borderRadius: BorderRadius.circular(
-                                10.0), // Match Card's shape
-                            onTap: () {
-                              journalNotifier
-                                  .updateActuallySelectedDay(entry.date);
-                              journalNotifier.updateSelectedMonth(entry.date);
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => JournalListScreen(
-                                      selectedDate: entry.date),
-                                ),
-                              );
-                            },
-                            child: Padding(
-                              // Use Padding instead of ListTile for custom layout
-                              padding: const EdgeInsets.symmetric(
-                                  vertical: 12.0, horizontal: 16.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(leftText, style: leftTextStyle),
-                                      Text(
-                                        rightText,
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .onSurfaceVariant,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  SizedBox(
-                                      height:
-                                          8), // Spacing between the date row and content
-                                  Text(
-                                    entry.content,
-                                    maxLines:
-                                        3, // Allow more lines for content preview
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      height: 1.4, // Improved line spacing
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurface,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
+                        return Padding(
+                            padding: EdgeInsets.only(top: 16),
+                            child:
+                                showCardList(context, journalNotifier, entry));
+                        // Card(
+                        //   elevation: 2,
+                        //   margin: const EdgeInsets.symmetric(
+                        //       vertical: 5.0, horizontal: 8.0),
+                        //   shape: RoundedRectangleBorder(
+                        //     borderRadius: BorderRadius.circular(10.0),
+                        //   ),
+                        //   child: InkWell(
+                        //     // Added InkWell for tap effect
+                        //     borderRadius: BorderRadius.circular(
+                        //         10.0), // Match Card's shape
+                        //     onTap: () {
+                        //       journalNotifier
+                        //           .updateActuallySelectedDay(entry.date);
+                        //       journalNotifier.updateSelectedMonth(entry.date);
+                        //       Navigator.push(
+                        //         context,
+                        //         MaterialPageRoute(
+                        //           builder: (_) => JournalListScreen(
+                        //               selectedDate: entry.date),
+                        //         ),
+                        //       );
+                        //     },
+                        //     child: Padding(
+                        //       // Use Padding instead of ListTile for custom layout
+                        //       padding: const EdgeInsets.symmetric(
+                        //           vertical: 12.0, horizontal: 16.0),
+                        //       child: Column(
+                        //         crossAxisAlignment: CrossAxisAlignment.start,
+                        //         children: [
+                        //           Row(
+                        //             mainAxisAlignment:
+                        //                 MainAxisAlignment.spaceBetween,
+                        //             children: [
+                        //               Text(leftText, style: leftTextStyle),
+                        //               Text(
+                        //                 rightText,
+                        //                 style: TextStyle(
+                        //                   fontSize: 13,
+                        //                   color: Theme.of(context)
+                        //                       .colorScheme
+                        //                       .onSurfaceVariant,
+                        //                 ),
+                        //               ),
+                        //             ],
+                        //           ),
+                        //           SizedBox(
+                        //               height:
+                        //                   8), // Spacing between the date row and content
+                        //           Text(
+                        //             entry.content,
+                        //             maxLines:
+                        //                 3, // Allow more lines for content preview
+                        //             overflow: TextOverflow.ellipsis,
+                        //             style: TextStyle(
+                        //               fontSize: 15,
+                        //               height: 1.4, // Improved line spacing
+                        //               color: Theme.of(context)
+                        //                   .colorScheme
+                        //                   .onSurface,
+                        //             ),
+                        //           ),
+                        //         ],
+                        //       ),
+                        //     ),
+                        //   ),
+                        // );
                       },
                     ),
             ),
@@ -251,4 +257,98 @@ class CalendarScreen extends ConsumerWidget {
   bool isSameMonth(DateTime d1, DateTime d2) {
     return d1.year == d2.year && d1.month == d2.month;
   }
+}
+
+Widget showCardList(
+    BuildContext context, JournalNotifier journalNotifier, JournalEntry entry) {
+  final now = DateTime.now();
+  final DateTime today = DateTime.utc(now.year, now.month, now.day);
+  final DateTime yesterday = DateTime.utc(now.year, now.month, now.day - 1);
+  final String rightText = DateFormat('dd/MM/yyyy').format(entry.date);
+  String leftText;
+  TextStyle leftTextStyle = TextStyle(
+    fontSize: 15, // Adjusted for consistency
+    fontWeight: FontWeight.w600, // Make it stand out
+    color:
+        Theme.of(context).colorScheme.primary, // Use primary color for emphasis
+  );
+
+  if (isSameDay(entry.date, today)) {
+    leftText = "Today";
+  } else if (isSameDay(entry.date, yesterday)) {
+    leftText = "Yesterday";
+    leftTextStyle = leftTextStyle.copyWith(
+        color: Theme.of(context)
+            .colorScheme
+            .secondary); // Different color for yesterday
+  } else {
+    leftText = DateFormat('EEEE').format(entry.date); // Day of the week
+    leftTextStyle = leftTextStyle.copyWith(
+      fontWeight: FontWeight.normal, // Normal weight for other days
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
+    );
+  }
+  return GestureDetector(
+    onTap: () {
+      journalNotifier.updateActuallySelectedDay(entry.date);
+      journalNotifier.updateSelectedMonth(entry.date);
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => JournalListScreen(selectedDate: entry.date),
+        ),
+      );
+    },
+    child: Container(
+      padding: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      decoration: BoxDecoration(
+       
+        border: Border(
+          left: BorderSide(
+            color: Colors.grey, // You can change this color
+            width: 2.0, // Adjust the width for thickness
+          ),
+        ),
+        
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.2),
+            spreadRadius: 1,
+            blurRadius: 3,
+            offset: Offset(1, 1), // changes position of shadow
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(leftText, style: leftTextStyle),
+              Text(
+                rightText,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 8), // Spacing between the date row and content
+          Text(
+            entry.content,
+            maxLines: 3, // Allow more lines for content preview
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 15,
+              height: 1.4, // Improved line spacing
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }

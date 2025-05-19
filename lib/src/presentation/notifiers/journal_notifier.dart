@@ -1,9 +1,14 @@
-import 'package:flutter/material.dart';
+// journal_notifier.dart
+
+import 'dart:io';
+import 'package:excel/excel.dart'; // For Excel, Sheet, TextCellValue, etc.
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart'; // For debugPrint
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
-import '../../domain/entities/journal_entry.dart';
-import '../../domain/repositories/jorunal_repository.dart';
+import '../../domain/entities/journal_entry.dart'; // Your JournalEntry model
+import '../../domain/repositories/jorunal_repository.dart'; // You still have _repository for other things
 import 'journal_state.dart';
 
 class JournalNotifier extends StateNotifier<JournalState> {
@@ -20,54 +25,90 @@ class JournalNotifier extends StateNotifier<JournalState> {
 
   Future<void> loadEntries() async {
     final entries = await _repository.getEntries();
-    state =
-        state.copyWith(entries: entries); // Using copyWith from JournalState
+    state = state.copyWith(entries: entries);
   }
 
   Future<void> addEntry(JournalEntry entry) async {
     if (!isFutureDate(entry.date)) {
       await _repository.addEntry(entry);
-      // No need to call loadEntries() again if you can update state optimistically
-      // or add the new entry directly to the existing list for better UX.
-      // For simplicity, loadEntries() is fine.
       await loadEntries();
     }
   }
 
-  Future<String?> exportToExcel() async {
-    final monthEntries = state.entries
-        .where((entry) =>
-            entry.date.year == state.selectedMonth.year &&
-            entry.date.month == state.selectedMonth.month)
-        .toList();
-
+  // This exportToExcel method is now part of JournalNotifier
+  // It takes monthEntries and monthNameForFile as parameters.
+  Future<String?> exportToExcel(
+      List<JournalEntry> monthEntries, String monthNameForFile) async {
     if (monthEntries.isEmpty) {
-      debugPrint("No entries for the selected month to export.");
-      return null; // Or throw an exception / return a specific message
+      // This check is good, even if also done by the caller.
+      debugPrint("Notifier.exportToExcel: No entries received to export.");
+      return null;
     }
- 
-    final monthName = DateFormat('MMMM_yyyy').format(state.selectedMonth);
 
     try {
-      return await _repository.exportToExcel(monthEntries, monthName);
-    } catch (e) {
-      debugPrint("Error in JournalNotifier.exportToExcel: $e");
+      var excel = Excel.createExcel();
+      Sheet sheetObject = excel['Journal Entries for $monthNameForFile'];
+
+      // Add headers - Wrap each string in TextCellValue
+      sheetObject.appendRow([
+        TextCellValue('Date'), // MODIFIED
+        TextCellValue('Title'), // MODIFIED
+        TextCellValue('Content'), // MODIFIED
+      ]);
+
+      // Add data rows
+      for (var entry in monthEntries) {
+        // Choose one way to handle dates:
+        // Option 1: As a formatted string (will be text in Excel)
+        TextCellValue cellDateFormatted =
+            TextCellValue(DateFormat('yyyy-MM-dd HH:mm').format(entry.date));
+
+        // Option 2: As a native Excel DateTime value (allows date functions in Excel)
+        // DateTimeCellValue cellDateNative = DateTimeCellValue.fromDateTime(entry.date);
+
+        sheetObject.appendRow([
+          cellDateFormatted, // MODIFIED (use this for formatted string)
+          // cellDateNative,            // OR use this for native Excel DateTime
+          TextCellValue("="), // MODIFIED
+          TextCellValue(entry.content), // MODIFIED
+        ]);
+      }
+
+      final List<int>? fileBytes = excel.save(fileName: "temp_export.xlsx");
+
+      if (fileBytes == null) {
+        debugPrint('Notifier.exportToExcel: Error generating Excel bytes.');
+        return null;
+      }
+
+      String suggestedFileName = 'JournalExport_$monthNameForFile.xlsx';
+      String? outputFile = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save Journal Export',
+        fileName: suggestedFileName,
+      );
+
+      if (outputFile == null) {
+        debugPrint(
+            'Notifier.exportToExcel: User cancelled the save file dialog.');
+        return null;
+      }
+
+      final File file = File(outputFile);
+      await file.writeAsBytes(fileBytes, flush: true);
+
+      debugPrint(
+          'Notifier.exportToExcel: Exported successfully to: $outputFile');
+      return outputFile;
+    } catch (e, s) {
+      debugPrint('Notifier.exportToExcel: Error: $e');
+      debugPrint('Notifier.exportToExcel: Stack trace: $s');
       return null;
     }
   }
 
   void updateSelectedMonth(DateTime newMonth) {
-    // Ensure newMonth is not in the future if that's a rule for selection
-    if (newMonth.isAfter(DateTime.now()) &&
-        !isSameMonth(newMonth, DateTime.now())) {
-      // Optionally prevent selecting future months or cap at current month
-      // For now, allowing it as per original logic in CalendarScreen's lastDay
-      state = state.copyWith(selectedMonth: newMonth);
-    } else {
-      state = state.copyWith(selectedMonth: newMonth);
-    }
-    // If entries are month-specific and not all loaded at once, you might reload here.
-    // But your current loadEntries fetches all.
+    // ... your existing code ...
+    state = state.copyWith(selectedMonth: newMonth);
   }
 
   void updateActuallySelectedDay(DateTime? newSelectedDay) {
@@ -75,14 +116,13 @@ class JournalNotifier extends StateNotifier<JournalState> {
   }
 
   bool isFutureDate(DateTime date) {
-    // Compare only the date part, ignoring time, if you want to allow today.
+    // ... your existing code ...
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final inputDate = DateTime(date.year, date.month, date.day);
     return inputDate.isAfter(today);
   }
 
-  // Helper to check if two DateTime objects are in the same month and year
   bool isSameMonth(DateTime d1, DateTime d2) {
     return d1.year == d2.year && d1.month == d2.month;
   }

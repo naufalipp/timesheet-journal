@@ -43,6 +43,7 @@ dependencies:
   path_provider: ^2.1.5
   file_saver: ^0.2.14
   permission_handler: ^12.0.0+1
+  file_picker: ^10.1.9
 
 dev_dependencies:
   flutter_test:

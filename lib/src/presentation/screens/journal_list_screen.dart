@@ -2,7 +2,8 @@ import 'dart:typed_data'; // Keep if you need it for something else, else remove
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:table_calendar/table_calendar.dart'; 
+import 'package:table_calendar/table_calendar.dart';
+import 'package:timesheet_journal/src/presentation/notifiers/journal_notifier.dart';
 
 import '../providers/journal_provider.dart'; // Assuming this path is correct
 import '../../domain/entities/journal_entry.dart'; // For type usage
@@ -155,8 +156,34 @@ class JournalListScreen extends ConsumerWidget {
                 icon: Icon(Icons.download, size: 18),
                 label: Text('Export Month'),
                 onPressed: () async {
-                  final String? filePath =
-                      await journalNotifier.exportToExcel();
+                  final currentJournalState = journalNotifier
+                      .state; // Or however you access state if using Riverpod ref.watch
+
+                  // 2. Prepare monthEntries based on the current state
+                  final List<JournalEntry> monthEntriesToExport =
+                      currentJournalState.entries
+                          .where((entry) =>
+                              entry.date.year ==
+                                  currentJournalState.selectedMonth.year &&
+                              entry.date.month ==
+                                  currentJournalState.selectedMonth.month)
+                          .toList();
+
+                  // 3. Handle if no entries (optional, as exportToExcel also checks, but good for quick UI feedback)
+                  if (monthEntriesToExport.isEmpty) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                            content: Text(
+                                'No entries for ${DateFormat('MMMM yyyy').format(currentJournalState.selectedMonth)} to export.')),
+                      );
+                    }
+                    return;
+                  }
+                  final String monthName = DateFormat('MMMM_yyyy')
+                      .format(currentJournalState.selectedMonth);
+                  final String? filePath = await journalNotifier.exportToExcel(
+                      monthEntriesToExport, monthName);
 
                   if (context.mounted) {
                     if (filePath != null && filePath.isNotEmpty) {
@@ -173,17 +200,14 @@ class JournalListScreen extends ConsumerWidget {
                   }
                 },
                 style: ElevatedButton.styleFrom(
-                  // Consider using TextButton for a flatter look if desired, or style ElevatedButton
-                  // foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                  // backgroundColor: Theme.of(context).colorScheme.primary,
+                 
                   padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   elevation:
-                      0, // For a flatter style if preferred for appbar actions
+                      0, 
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8)),
-                ) //.copyWith( // .copyWith can be tricky with styleFrom
-                // elevation: MaterialStateProperty.all(0),
-                //),
+                ) 
+               
                 ),
           ),
           SizedBox(width: 8),
@@ -213,43 +237,47 @@ class JournalListScreen extends ConsumerWidget {
                 itemCount: dayEntries.length,
                 itemBuilder: (context, index) {
                   final entry = dayEntries[index];
-                  return Card(
-                    margin: EdgeInsets.symmetric(
-                        vertical: 6, horizontal: 8), // Adjusted margin
-                    shape: RoundedRectangleBorder(
-                        borderRadius:
-                            BorderRadius.circular(12)), // Slightly more rounded
-                    elevation: 3, // Consistent elevation
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0), // Increased padding
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            DateFormat('h:mm a').format(entry.date),
-                            style: TextStyle(
-                                fontSize: 13,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant, // Theme aware color
-                                fontWeight: FontWeight.w500),
-                          ),
-                          SizedBox(height: 6),
-                          Text(
-                            entry.content,
-                            style: TextStyle(
-                              fontSize: 16,
-                              height:
-                                  1.4, // Improved line spacing for readability
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurface, // Theme aware color
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
+
+                  return Padding(
+                      padding: EdgeInsets.only(top: 16),
+                      child: showCardList(context, journalNotifier, entry));
+                  // Card(
+                  //   margin: EdgeInsets.symmetric(
+                  //       vertical: 6, horizontal: 8), // Adjusted margin
+                  //   shape: RoundedRectangleBorder(
+                  //       borderRadius:
+                  //           BorderRadius.circular(12)), // Slightly more rounded
+                  //   elevation: 3, // Consistent elevation
+                  //   child: Padding(
+                  //     padding: const EdgeInsets.all(16.0), // Increased padding
+                  //     child: Column(
+                  //       crossAxisAlignment: CrossAxisAlignment.start,
+                  //       children: [
+                  //         Text(
+                  //           DateFormat('h:mm a').format(entry.date),
+                  //           style: TextStyle(
+                  //               fontSize: 13,
+                  //               color: Theme.of(context)
+                  //                   .colorScheme
+                  //                   .onSurfaceVariant, // Theme aware color
+                  //               fontWeight: FontWeight.w500),
+                  //         ),
+                  //         SizedBox(height: 6),
+                  //         Text(
+                  //           entry.content,
+                  //           style: TextStyle(
+                  //             fontSize: 16,
+                  //             height:
+                  //                 1.4, // Improved line spacing for readability
+                  //             color: Theme.of(context)
+                  //                 .colorScheme
+                  //                 .onSurface, // Theme aware color
+                  //           ),
+                  //         ),
+                  //       ],
+                  //     ),
+                  //   ),
+                  // );
                 },
               ),
             ),
@@ -265,7 +293,6 @@ class JournalListScreen extends ConsumerWidget {
           }
           _contentController.clear();
 
-          // Define the save logic that will be passed to the aesthetic dialog
           void handleSave() {
             if (_contentController.text.isNotEmpty) {
               final entryTime = DateTime.now();
@@ -288,10 +315,9 @@ class JournalListScreen extends ConsumerWidget {
               Navigator.pop(
                   context); // Close the dialog (context here is from FAB's scope)
             } else {
-              // If content is empty, show a SnackBar.
-              // The dialog will remain open for the user to enter text.
+             
               ScaffoldMessenger.of(context).showSnackBar(
-                // Use the FAB's context
+             
                 SnackBar(
                   content: Text('Please write something to save!'),
                   duration: Duration(seconds: 2),
@@ -301,9 +327,8 @@ class JournalListScreen extends ConsumerWidget {
             }
           }
 
-          // Call the aesthetic dialog
           showJournalDialog(
-            context: context, // This is the BuildContext from the build method
+            context: context, 
             selectedDate: selectedDate,
             contentController: _contentController,
             onSavePressed: handleSave,
@@ -314,4 +339,96 @@ class JournalListScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+Widget showCardList(
+    BuildContext context, JournalNotifier journalNotifier, JournalEntry entry) {
+  final now = DateTime.now();
+  final DateTime today = DateTime.utc(now.year, now.month, now.day);
+  final DateTime yesterday = DateTime.utc(now.year, now.month, now.day - 1);
+  final String rightText = DateFormat('dd/MM/yyyy').format(entry.date);
+  String leftText;
+  TextStyle leftTextStyle = TextStyle(
+    fontSize: 15, // Adjusted for consistency
+    fontWeight: FontWeight.w600, // Make it stand out
+    color:
+        Theme.of(context).colorScheme.primary, // Use primary color for emphasis
+  );
+
+  if (isSameDay(entry.date, today)) {
+    leftText = "Today";
+  } else if (isSameDay(entry.date, yesterday)) {
+    leftText = "Yesterday";
+    leftTextStyle = leftTextStyle.copyWith(
+        color: Theme.of(context)
+            .colorScheme
+            .secondary); // Different color for yesterday
+  } else {
+    leftText = DateFormat('EEEE').format(entry.date); // Day of the week
+    leftTextStyle = leftTextStyle.copyWith(
+      fontWeight: FontWeight.normal, // Normal weight for other days
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
+    );
+  }
+  return GestureDetector(
+    onTap: () {
+      journalNotifier.updateActuallySelectedDay(entry.date);
+      journalNotifier.updateSelectedMonth(entry.date);
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => JournalListScreen(selectedDate: entry.date),
+        ),
+      );
+    },
+    child: Container(
+      padding: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      decoration: BoxDecoration(
+        border: Border(
+          left: BorderSide(
+            color: Colors.grey, // You can change this color
+            width: 2.0, // Adjust the width for thickness
+          ),
+        ),
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.2),
+            spreadRadius: 1,
+            blurRadius: 3,
+            offset: Offset(1, 1), // changes position of shadow
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(leftText, style: leftTextStyle),
+              Text(
+                rightText,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 8), // Spacing between the date row and content
+          Text(
+            entry.content,
+            maxLines: 3, // Allow more lines for content preview
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 15,
+              height: 1.4, // Improved line spacing
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }
