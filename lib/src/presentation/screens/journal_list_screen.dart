@@ -1,7 +1,10 @@
-import 'dart:typed_data'; // Keep if you need it for something else, else remove
+// Keep if you need it for something else, else remove
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:timesheet_journal/src/presentation/notifiers/journal_notifier.dart';
 
@@ -156,6 +159,19 @@ class JournalListScreen extends ConsumerWidget {
                 icon: Icon(Icons.download, size: 18),
                 label: Text('Export Month'),
                 onPressed: () async {
+                  debugPrint(
+                      'Storage permission: ${await Permission.storage.status}');
+                  debugPrint(
+                      'Manage external storage: ${await Permission.manageExternalStorage.status}');
+                  bool hasPermission = await _requestStoragePermission(context);
+                  if (!hasPermission) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                          content: Text(
+                              'Storage permission is required to export.')),
+                    );
+                    return;
+                  }
                   final currentJournalState = journalNotifier
                       .state; // Or however you access state if using Riverpod ref.watch
 
@@ -180,10 +196,14 @@ class JournalListScreen extends ConsumerWidget {
                     }
                     return;
                   }
+                  debugPrint(
+                      'Entries to export: ${monthEntriesToExport.length}');
+                  debugPrint(
+                      'Entries to export: ${monthEntriesToExport.map((e) => e.toString()).toList()}');
                   final String monthName = DateFormat('MMMM_yyyy')
                       .format(currentJournalState.selectedMonth);
-                  final String? filePath = await journalNotifier.exportToExcel(
-                      monthEntriesToExport, monthName);
+                  final String? filePath = await journalNotifier.exportToCsv(
+                      monthEntriesToExport, monthName, context);
 
                   if (context.mounted) {
                     if (filePath != null && filePath.isNotEmpty) {
@@ -200,15 +220,11 @@ class JournalListScreen extends ConsumerWidget {
                   }
                 },
                 style: ElevatedButton.styleFrom(
-                 
                   padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  elevation:
-                      0, 
+                  elevation: 0,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8)),
-                ) 
-               
-                ),
+                )),
           ),
           SizedBox(width: 8),
         ],
@@ -241,43 +257,6 @@ class JournalListScreen extends ConsumerWidget {
                   return Padding(
                       padding: EdgeInsets.only(top: 16),
                       child: showCardList(context, journalNotifier, entry));
-                  // Card(
-                  //   margin: EdgeInsets.symmetric(
-                  //       vertical: 6, horizontal: 8), // Adjusted margin
-                  //   shape: RoundedRectangleBorder(
-                  //       borderRadius:
-                  //           BorderRadius.circular(12)), // Slightly more rounded
-                  //   elevation: 3, // Consistent elevation
-                  //   child: Padding(
-                  //     padding: const EdgeInsets.all(16.0), // Increased padding
-                  //     child: Column(
-                  //       crossAxisAlignment: CrossAxisAlignment.start,
-                  //       children: [
-                  //         Text(
-                  //           DateFormat('h:mm a').format(entry.date),
-                  //           style: TextStyle(
-                  //               fontSize: 13,
-                  //               color: Theme.of(context)
-                  //                   .colorScheme
-                  //                   .onSurfaceVariant, // Theme aware color
-                  //               fontWeight: FontWeight.w500),
-                  //         ),
-                  //         SizedBox(height: 6),
-                  //         Text(
-                  //           entry.content,
-                  //           style: TextStyle(
-                  //             fontSize: 16,
-                  //             height:
-                  //                 1.4, // Improved line spacing for readability
-                  //             color: Theme.of(context)
-                  //                 .colorScheme
-                  //                 .onSurface, // Theme aware color
-                  //           ),
-                  //         ),
-                  //       ],
-                  //     ),
-                  //   ),
-                  // );
                 },
               ),
             ),
@@ -315,9 +294,7 @@ class JournalListScreen extends ConsumerWidget {
               Navigator.pop(
                   context); // Close the dialog (context here is from FAB's scope)
             } else {
-             
               ScaffoldMessenger.of(context).showSnackBar(
-             
                 SnackBar(
                   content: Text('Please write something to save!'),
                   duration: Duration(seconds: 2),
@@ -328,7 +305,7 @@ class JournalListScreen extends ConsumerWidget {
           }
 
           showJournalDialog(
-            context: context, 
+            context: context,
             selectedDate: selectedDate,
             contentController: _contentController,
             onSavePressed: handleSave,
@@ -338,6 +315,77 @@ class JournalListScreen extends ConsumerWidget {
         tooltip: 'Add new journal entry',
       ),
     );
+  }
+}
+
+Future<bool> _requestStoragePermission(BuildContext context) async {
+  if (Platform.isAndroid) {
+    // Check Android version using package_info_plus or device_info_plus if needed
+    // For simplicity, try manageExternalStorage first, then fallback to storage
+    if (await Permission.manageExternalStorage.isGranted) {
+      debugPrint('Manage external storage permission already granted.');
+      return true;
+    }
+
+    // Request MANAGE_EXTERNAL_STORAGE for Android 11+ (API 30+)
+    PermissionStatus manageStorageStatus =
+        await Permission.manageExternalStorage.request();
+    if (manageStorageStatus.isGranted) {
+      debugPrint('Manage external storage permission granted.');
+      return true;
+    } else if (manageStorageStatus.isPermanentlyDenied) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content:
+                const Text('Please enable storage permission in settings.'),
+            action: SnackBarAction(
+              label: 'Open Settings',
+              onPressed: () => openAppSettings(),
+            ),
+          ),
+        );
+      }
+      debugPrint('Manage external storage permanently denied.');
+      return false;
+    }
+
+    // Fallback to storage permission for older Android versions (API < 30)
+    if (await Permission.storage.isGranted) {
+      debugPrint('Storage permission already granted.');
+      return true;
+    }
+
+    PermissionStatus storageStatus = await Permission.storage.request();
+    if (storageStatus.isGranted) {
+      debugPrint('Storage permission granted.');
+      return true;
+    } else if (storageStatus.isPermanentlyDenied) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content:
+                const Text('Please enable storage permission in settings.'),
+            action: SnackBarAction(
+              label: 'Open Settings',
+              onPressed: () => openAppSettings(),
+            ),
+          ),
+        );
+      }
+      debugPrint('Storage permission permanently denied.');
+      return false;
+    }
+    debugPrint('Storage permission denied: $storageStatus');
+    return false;
+  } else if (Platform.isIOS) {
+    // iOS typically doesn't require explicit storage permissions for FilePicker
+    debugPrint('iOS platform: No storage permission required.');
+    return true;
+  } else {
+    // Web or other platforms: No permission needed for FilePicker or excel.save()
+    debugPrint('Non-mobile platform: No storage permission required.');
+    return true;
   }
 }
 
