@@ -2,7 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive/hive.dart';
 
 import '../../domain/entities/journal_entry.dart';
-import '../../domain/repositories/jorunal_repository.dart';
+import '../../domain/repositories/journal_repository.dart';
 import '../../data/datasources/journal_local_data_source.dart';
 import '../../data/repositories/journal_repository_impl.dart';
 import '../notifiers/journal_notifier.dart';

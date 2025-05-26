@@ -6,7 +6,7 @@ import 'package:permission_handler/permission_handler.dart'; // If you kept this
 import 'dart:io'; // For Platform.isAndroid
 
 import '../../domain/entities/journal_entry.dart';
-import '../../domain/repositories/jorunal_repository.dart';
+import '../../domain/repositories/journal_repository.dart';
 import '../datasources/journal_local_data_source.dart';
 
 class JournalRepositoryImpl implements JournalRepository {
@@ -24,6 +24,18 @@ class JournalRepositoryImpl implements JournalRepository {
     return await dataSource.getEntries();
   }
 
+  @override
+  Future<void> deleteEntry(dynamic key) async {
+    await dataSource.deleteEntry(key);
+  }
+
+  @override
+  Future<dynamic> getKeyForEntry(JournalEntry entry) async {
+    // The repository's job is to simply delegate this request to the data source.
+    // The actual logic of finding the Hive key resides in the dataSource.
+    return await dataSource.getKeyForEntry(entry);
+  }
+  
   @override
   Future<String?> exportToExcel(List<JournalEntry> entries, String month) async {
     var excel = Excel.createExcel();
@@ -82,4 +94,6 @@ class JournalRepositoryImpl implements JournalRepository {
       return null;
     }
   }
+  
+  
 }

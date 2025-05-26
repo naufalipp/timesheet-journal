@@ -11,7 +11,15 @@ class JournalLocalDataSource {
     await box.put(entry.date.toIso8601String(), entry);
   }
 
+  Future<void> deleteEntry(dynamic key) async {
+    await box.delete(key);
+  }
+
   Future<List<JournalEntry>> getEntries() async {
     return box.values.toList();
+  }
+
+  Future<dynamic> getKeyForEntry(JournalEntry entry) async {
+    return entry.date.toIso8601String();
   }
 }

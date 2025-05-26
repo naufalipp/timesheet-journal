@@ -150,82 +150,9 @@ class JournalListScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-            'Entries for ${DateFormat('MMMM d,<y_bin_398>').format(selectedDate)}'),
+            'Entries for ${DateFormat('d MMMM yyyy').format(selectedDate)}'),
         actions: [
-          Tooltip(
-            message:
-                "Export entries for ${DateFormat('MMMM<y_bin_398>').format(journalState.selectedMonth)}",
-            child: ElevatedButton.icon(
-                icon: Icon(Icons.download, size: 18),
-                label: Text('Export Month'),
-                onPressed: () async {
-                  debugPrint(
-                      'Storage permission: ${await Permission.storage.status}');
-                  debugPrint(
-                      'Manage external storage: ${await Permission.manageExternalStorage.status}');
-                  bool hasPermission = await _requestStoragePermission(context);
-                  if (!hasPermission) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                          content: Text(
-                              'Storage permission is required to export.')),
-                    );
-                    return;
-                  }
-                  final currentJournalState = journalNotifier
-                      .state; // Or however you access state if using Riverpod ref.watch
-
-                  // 2. Prepare monthEntries based on the current state
-                  final List<JournalEntry> monthEntriesToExport =
-                      currentJournalState.entries
-                          .where((entry) =>
-                              entry.date.year ==
-                                  currentJournalState.selectedMonth.year &&
-                              entry.date.month ==
-                                  currentJournalState.selectedMonth.month)
-                          .toList();
-
-                  // 3. Handle if no entries (optional, as exportToExcel also checks, but good for quick UI feedback)
-                  if (monthEntriesToExport.isEmpty) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                            content: Text(
-                                'No entries for ${DateFormat('MMMM yyyy').format(currentJournalState.selectedMonth)} to export.')),
-                      );
-                    }
-                    return;
-                  }
-                  debugPrint(
-                      'Entries to export: ${monthEntriesToExport.length}');
-                  debugPrint(
-                      'Entries to export: ${monthEntriesToExport.map((e) => e.toString()).toList()}');
-                  final String monthName = DateFormat('MMMM_yyyy')
-                      .format(currentJournalState.selectedMonth);
-                  final String? filePath = await journalNotifier.exportToCsv(
-                      monthEntriesToExport, monthName, context);
-
-                  if (context.mounted) {
-                    if (filePath != null && filePath.isNotEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Exported month to: $filePath')),
-                      );
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                            content: Text(
-                                'Export failed, was cancelled, or no entries to export.')),
-                      );
-                    }
-                  }
-                },
-                style: ElevatedButton.styleFrom(
-                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                )),
-          ),
+          
           SizedBox(width: 8),
         ],
       ),
