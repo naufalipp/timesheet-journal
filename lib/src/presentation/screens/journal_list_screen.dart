@@ -4,19 +4,56 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:timesheet_journal/src/presentation/notifiers/journal_notifier.dart';
 
 import '../providers/journal_provider.dart'; // Assuming this path is correct
 import '../../domain/entities/journal_entry.dart'; // For type usage
 
+bool isSameDay(DateTime a, DateTime b) {
+  return a.year == b.year && a.month == b.month && a.day == b.day;
+}
+
+/// A versatile dialog for both adding and editing journal entries, using your provided UI.
 void showJournalDialog({
   required BuildContext context,
+  required JournalNotifier journalNotifier,
   required DateTime selectedDate,
-  required TextEditingController contentController,
-  required VoidCallback onSavePressed,
+  JournalEntry? entry, // If entry is provided, we are in "edit" mode
 }) {
+  final isEditing = entry != null;
+  final _contentController =
+      TextEditingController(text: isEditing ? entry.content : '');
+
+  void handleSave() {
+    if (_contentController.text.isNotEmpty) {
+      if (isEditing) {
+        // Call update logic
+        journalNotifier.updateEntry(entry!, _contentController.text);
+      } else {
+        // Call add logic
+        final entryTime = DateTime.now();
+        final entryDateWithTime = DateTime(
+            selectedDate.year,
+            selectedDate.month,
+            selectedDate.day,
+            entryTime.hour,
+            entryTime.minute,
+            entryTime.second);
+        journalNotifier.addEntry(JournalEntry(
+            date: entryDateWithTime, content: _contentController.text));
+      }
+      Navigator.pop(context); // Close the dialog
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text('Please write something to save!'),
+            backgroundColor: Colors.redAccent),
+      );
+    }
+  }
+
+  // Using the UI from your JournalListScreen
   final BorderRadius dialogBorderRadius = BorderRadius.circular(20.0);
   final Color primaryColor = Theme.of(context).colorScheme.primary;
   final Color onPrimaryColor = Theme.of(context).colorScheme.onPrimary;
@@ -41,53 +78,40 @@ void showJournalDialog({
             const EdgeInsets.symmetric(horizontal: 24.0, vertical: 12.0),
         actionsPadding: const EdgeInsets.fromLTRB(24.0, 16.0, 24.0, 20.0),
         title: Text(
-          'New Entry: ${DateFormat('yyyy-MM-dd').format(selectedDate)}',
+          isEditing
+              ? 'Edit Entry'
+              : 'New Entry: ${DateFormat('yyyy-MM-dd').format(selectedDate)}',
           textAlign: TextAlign.center,
           style: TextStyle(
-            fontWeight: FontWeight.w600,
-            fontSize: 19.0,
-            color: primaryColor,
-          ),
+              fontWeight: FontWeight.w600, fontSize: 19.0, color: primaryColor),
         ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: contentController,
-                decoration: InputDecoration(
-                  hintText: 'Add your journal for this day',
-                  hintStyle: TextStyle(color: hintTextColor, fontSize: 15.0),
-                  filled: true,
-                  fillColor: textFieldFillColor,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12.0),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12.0),
-                    borderSide:
-                        BorderSide(color: subtleBorderColor, width: 1.0),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12.0),
-                    borderSide: BorderSide(color: primaryColor, width: 1.5),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16.0, vertical: 14.0),
-                ),
-                maxLines: 5,
-                autofocus: true,
-                style: TextStyle(
-                  fontSize: 16.0,
-                  color: Theme.of(context).textTheme.bodyLarge?.color ??
-                      Colors.black87,
-                ),
-                keyboardType: TextInputType.multiline,
-                textInputAction: TextInputAction.newline,
-              ),
-            ],
+        content: TextField(
+          controller: _contentController,
+          decoration: InputDecoration(
+            hintText: 'Add your journal for this day',
+            hintStyle: TextStyle(color: hintTextColor, fontSize: 15.0),
+            filled: true,
+            fillColor: textFieldFillColor,
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12.0),
+                borderSide: BorderSide.none),
+            enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12.0),
+                borderSide: BorderSide(color: subtleBorderColor, width: 1.0)),
+            focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12.0),
+                borderSide: BorderSide(color: primaryColor, width: 1.5)),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
           ),
+          maxLines: 5,
+          autofocus: true,
+          style: TextStyle(
+              fontSize: 16.0,
+              color: Theme.of(context).textTheme.bodyLarge?.color ??
+                  Colors.black87),
+          keyboardType: TextInputType.multiline,
+          textInputAction: TextInputAction.newline,
         ),
         actions: <Widget>[
           TextButton(
@@ -95,16 +119,13 @@ void showJournalDialog({
               padding:
                   const EdgeInsets.symmetric(horizontal: 18.0, vertical: 12.0),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12.0),
-                side: BorderSide(color: Colors.grey.shade400, width: 1),
-              ),
+                  borderRadius: BorderRadius.circular(12.0),
+                  side: BorderSide(color: Colors.grey.shade400, width: 1)),
               foregroundColor: Colors.grey.shade700,
             ),
             child: const Text('Cancel',
                 style: TextStyle(fontSize: 15.0, fontWeight: FontWeight.w500)),
-            onPressed: () {
-              Navigator.pop(dialogContext);
-            },
+            onPressed: () => Navigator.pop(dialogContext),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -113,81 +134,128 @@ void showJournalDialog({
               padding:
                   const EdgeInsets.symmetric(horizontal: 22.0, vertical: 12.0),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12.0),
-              ),
+                  borderRadius: BorderRadius.circular(12.0)),
               elevation: 3.0,
             ),
-            child: const Text('Save Entry',
+            child: Text(isEditing ? 'Save Changes' : 'Save Entry',
                 style: TextStyle(fontSize: 15.0, fontWeight: FontWeight.w600)),
-            onPressed:
-                onSavePressed, // This will now call the logic defined in the FAB's onPressed
+            onPressed: handleSave,
           ),
         ],
       );
     },
   );
 }
-//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-// End of Dialog Definition
-//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
+void _showDeleteDialog(
+    BuildContext context, JournalEntry entry, JournalNotifier journalNotifier) {
+  showDialog(
+    context: context,
+    builder: (BuildContext context) {
+      return AlertDialog(
+        title: Text("Delete Entry"),
+        content: Text("Are you sure you want to delete this journal entry?"),
+        actions: <Widget>[
+          TextButton(
+              child: Text("Cancel"),
+              onPressed: () => Navigator.of(context).pop()),
+          TextButton(
+            child: Text("Delete", style: TextStyle(color: Colors.red)),
+            onPressed: () {
+              journalNotifier.deleteJournalEntry(entry);
+              Navigator.of(context).pop();
+            },
+          ),
+        ],
+      );
+    },
+  );
+}
+
+// This function now calls the unified dialog for editing
+void _editEntry(
+    BuildContext context, JournalEntry entry, JournalNotifier journalNotifier) {
+  showJournalDialog(
+    context: context,
+    journalNotifier: journalNotifier,
+    selectedDate: entry.date,
+    entry: entry, // Pass the entry to activate "edit" mode
+  );
+}
+
+// --- WIDGETS ---
+
+// Restored JournalListScreen
 class JournalListScreen extends ConsumerWidget {
   final DateTime selectedDate;
-  final TextEditingController _contentController = TextEditingController();
-
-  JournalListScreen({super.key, required this.selectedDate}); // Added super.key
+  JournalListScreen({super.key, required this.selectedDate});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // This is an example of how you might get your provider.
+    // Replace `journalProvider` with your actual provider instance.
+    // final journalState = ref.watch(journalProvider);
+    // final journalNotifier = ref.read(journalProvider.notifier);
+
+    // Using placeholder data since the provider isn't fully defined yet.
+    // In your real app, you would remove this and use the lines above.
     final journalState = ref.watch(journalProvider);
     final journalNotifier = ref.read(journalProvider.notifier);
 
+    // Filter entries from the actual state
     final dayEntries = journalState.entries
         .where((entry) => isSameDay(entry.date, selectedDate))
-        .toList()
-      ..sort((a, b) => b.date.compareTo(a.date)); // Sort by time, recent first
+        .toList();
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-            'Entries for ${DateFormat('d MMMM yyyy').format(selectedDate)}'),
-        actions: [
-          
-          SizedBox(width: 8),
-        ],
-      ),
-      body: Column(
-        children: [
-          if (dayEntries.isEmpty)
-            Expanded(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Text(
-                    'No entries for this day.\nTap the "+" button to add your first thought!',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                        fontSize: 17, color: Colors.grey[600], height: 1.5),
-                  ),
-                ),
-              ),
-            )
-          else
-            Expanded(
-              child: ListView.builder(
-                padding: EdgeInsets.symmetric(
-                    vertical: 8.0, horizontal: 8.0), // Add padding to ListView
-                itemCount: dayEntries.length,
-                itemBuilder: (context, index) {
-                  final entry = dayEntries[index];
-
-                  return Padding(
-                      padding: EdgeInsets.only(top: 16),
-                      child: showCardList(context, journalNotifier, entry));
-                },
+      appBar: AppBar(),
+      body: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left :8.0),
+              child: Text(
+                'Entries for ${DateFormat('d MMMM yyyy').format(selectedDate)}',
+                textAlign: TextAlign.left,
+                style: TextStyle(
+                    fontSize: 17,
+                    color: Colors.grey[850],
+                    fontWeight: FontWeight.bold),
               ),
             ),
-        ],
+            Divider(),
+            if (dayEntries.isEmpty)
+              Expanded(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12.0),
+                    child: Text(
+                      'No entries for this day.\nTap the "+" button to add your first thought!',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          fontSize: 17, color: Colors.grey[600], height: 1.5),
+                    ),
+                  ),
+                ),
+              )
+            else
+              Expanded(
+                child: ListView.builder(
+                  padding: EdgeInsets.symmetric(vertical: 8.0),
+                  itemCount: dayEntries.length,
+                  itemBuilder: (context, index) {
+                    final entry = dayEntries[index];
+                    return Padding(
+                      padding: EdgeInsets.only(top: 16),
+                      child: showCardList(context, journalNotifier, entry),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
@@ -197,45 +265,12 @@ class JournalListScreen extends ConsumerWidget {
             );
             return;
           }
-          _contentController.clear();
-
-          void handleSave() {
-            if (_contentController.text.isNotEmpty) {
-              final entryTime = DateTime.now();
-              final entryDateWithTime = DateTime(
-                selectedDate.year,
-                selectedDate.month,
-                selectedDate.day,
-                entryTime.hour,
-                entryTime.minute,
-                entryTime.second,
-              );
-
-              journalNotifier.addEntry(
-                JournalEntry(
-                  date: entryDateWithTime,
-                  content: _contentController.text,
-                ),
-              );
-              _contentController.clear(); // Clear after successful save
-              Navigator.pop(
-                  context); // Close the dialog (context here is from FAB's scope)
-            } else {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Please write something to save!'),
-                  duration: Duration(seconds: 2),
-                  backgroundColor: Colors.redAccent,
-                ),
-              );
-            }
-          }
-
+          // The unified dialog is called here for adding a new entry
           showJournalDialog(
             context: context,
+            journalNotifier: journalNotifier,
             selectedDate: selectedDate,
-            contentController: _contentController,
-            onSavePressed: handleSave,
+            // No 'entry' is passed, so it correctly enters "add" mode.
           );
         },
         child: Icon(Icons.add),
@@ -245,165 +280,173 @@ class JournalListScreen extends ConsumerWidget {
   }
 }
 
-Future<bool> _requestStoragePermission(BuildContext context) async {
-  if (Platform.isAndroid) {
-    // Check Android version using package_info_plus or device_info_plus if needed
-    // For simplicity, try manageExternalStorage first, then fallback to storage
-    if (await Permission.manageExternalStorage.isGranted) {
-      debugPrint('Manage external storage permission already granted.');
-      return true;
-    }
-
-    // Request MANAGE_EXTERNAL_STORAGE for Android 11+ (API 30+)
-    PermissionStatus manageStorageStatus =
-        await Permission.manageExternalStorage.request();
-    if (manageStorageStatus.isGranted) {
-      debugPrint('Manage external storage permission granted.');
-      return true;
-    } else if (manageStorageStatus.isPermanentlyDenied) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content:
-                const Text('Please enable storage permission in settings.'),
-            action: SnackBarAction(
-              label: 'Open Settings',
-              onPressed: () => openAppSettings(),
-            ),
-          ),
-        );
-      }
-      debugPrint('Manage external storage permanently denied.');
-      return false;
-    }
-
-    // Fallback to storage permission for older Android versions (API < 30)
-    if (await Permission.storage.isGranted) {
-      debugPrint('Storage permission already granted.');
-      return true;
-    }
-
-    PermissionStatus storageStatus = await Permission.storage.request();
-    if (storageStatus.isGranted) {
-      debugPrint('Storage permission granted.');
-      return true;
-    } else if (storageStatus.isPermanentlyDenied) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content:
-                const Text('Please enable storage permission in settings.'),
-            action: SnackBarAction(
-              label: 'Open Settings',
-              onPressed: () => openAppSettings(),
-            ),
-          ),
-        );
-      }
-      debugPrint('Storage permission permanently denied.');
-      return false;
-    }
-    debugPrint('Storage permission denied: $storageStatus');
-    return false;
-  } else if (Platform.isIOS) {
-    // iOS typically doesn't require explicit storage permissions for FilePicker
-    debugPrint('iOS platform: No storage permission required.');
-    return true;
-  } else {
-    // Web or other platforms: No permission needed for FilePicker or excel.save()
-    debugPrint('Non-mobile platform: No storage permission required.');
-    return true;
-  }
-}
-
 Widget showCardList(
     BuildContext context, JournalNotifier journalNotifier, JournalEntry entry) {
-  final now = DateTime.now();
-  final DateTime today = DateTime.utc(now.year, now.month, now.day);
-  final DateTime yesterday = DateTime.utc(now.year, now.month, now.day - 1);
-  final String rightText = DateFormat('dd/MM/yyyy').format(entry.date);
-  String leftText;
-  TextStyle leftTextStyle = TextStyle(
-    fontSize: 15, // Adjusted for consistency
-    fontWeight: FontWeight.w600, // Make it stand out
-    color:
-        Theme.of(context).colorScheme.primary, // Use primary color for emphasis
-  );
-
-  if (isSameDay(entry.date, today)) {
-    leftText = "Today";
-  } else if (isSameDay(entry.date, yesterday)) {
-    leftText = "Yesterday";
-    leftTextStyle = leftTextStyle.copyWith(
-        color: Theme.of(context)
-            .colorScheme
-            .secondary); // Different color for yesterday
-  } else {
-    leftText = DateFormat('EEEE').format(entry.date); // Day of the week
-    leftTextStyle = leftTextStyle.copyWith(
-      fontWeight: FontWeight.normal, // Normal weight for other days
-      color: Theme.of(context).colorScheme.onSurfaceVariant,
-    );
-  }
-  return GestureDetector(
-    onTap: () {
-      journalNotifier.updateActuallySelectedDay(entry.date);
-      journalNotifier.updateSelectedMonth(entry.date);
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => JournalListScreen(selectedDate: entry.date),
-        ),
-      );
-    },
-    child: Container(
-      padding: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-      decoration: BoxDecoration(
-        border: Border(
-          left: BorderSide(
-            color: Colors.grey, // You can change this color
-            width: 2.0, // Adjust the width for thickness
-          ),
-        ),
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
+  return Container(
+    margin: EdgeInsets.symmetric(horizontal: 8),
+    decoration: BoxDecoration(
+      color: Theme.of(context).cardColor,
+      borderRadius: BorderRadius.circular(8),
+      boxShadow: [
+        BoxShadow(
             color: Colors.grey.withOpacity(0.2),
             spreadRadius: 1,
-            blurRadius: 3,
-            offset: Offset(1, 1), // changes position of shadow
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(leftText, style: leftTextStyle),
-              Text(
-                rightText,
+            blurRadius: 4,
+            offset: Offset(0, 2)),
+      ],
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 16.0, top: 12.0),
+              child: Text(
+                DateFormat.jm().format(entry.date),
                 style: TextStyle(
-                  fontSize: 13,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  color: Theme.of(context).colorScheme.secondary,
+                  decoration: TextDecoration
+                      .underline, // Add this line to underline the text
+                  decorationStyle: TextDecorationStyle.solid,
+                  
                 ),
               ),
-            ],
-          ),
-          SizedBox(height: 8), // Spacing between the date row and content
-          Text(
-            entry.content,
-            maxLines: 3, // Allow more lines for content preview
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 15,
-              height: 1.4, // Improved line spacing
-              color: Theme.of(context).colorScheme.onSurface,
             ),
+            Spacer(),
+            PopupMenuButton<String>(
+              icon: Icon(Icons.more_vert,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+              onSelected: (String result) {
+                if (result == 'edit') {
+                  _editEntry(context, entry, journalNotifier);
+                } else if (result == 'delete') {
+                  _showDeleteDialog(context, entry, journalNotifier);
+                }
+              },
+              itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                const PopupMenuItem<String>(
+                  value: 'edit',
+                  child: Row(children: [
+                    Icon(Icons.edit_outlined, size: 20),
+                    SizedBox(width: 8),
+                    Text('Edit')
+                  ]),
+                ),
+                const PopupMenuItem<String>(
+                  value: 'delete',
+                  child: Row(children: [
+                    Icon(Icons.delete_outline, size: 20),
+                    SizedBox(width: 8),
+                    Text('Delete')
+                  ]),
+                ),
+              ],
+            ),
+          ],
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+          child: Text(
+            entry.content,
+            style: TextStyle(
+                fontSize: 15,
+                height: 1.4,
+                color: Theme.of(context).colorScheme.onSurface),
           ),
-        ],
-      ),
+        ),
+      ],
     ),
   );
 }
+// Widget showCardList(
+//     BuildContext context, JournalNotifier journalNotifier, JournalEntry entry) {
+//   final now = DateTime.now();
+//   final DateTime today = DateTime.utc(now.year, now.month, now.day);
+//   final DateTime yesterday = DateTime.utc(now.year, now.month, now.day - 1);
+//   final String rightText = DateFormat('dd/MM/yyyy').format(entry.date);
+//   String leftText;
+//   TextStyle leftTextStyle = TextStyle(
+//     fontSize: 15, // Adjusted for consistency
+//     fontWeight: FontWeight.w600, // Make it stand out
+//     color:
+//         Theme.of(context).colorScheme.primary, // Use primary color for emphasis
+//   );
+
+//   if (isSameDay(entry.date, today)) {
+//     leftText = "Today";
+//   } else if (isSameDay(entry.date, yesterday)) {
+//     leftText = "Yesterday";
+//     leftTextStyle = leftTextStyle.copyWith(
+//         color: Theme.of(context)
+//             .colorScheme
+//             .secondary); // Different color for yesterday
+//   } else {
+//     leftText = DateFormat('EEEE').format(entry.date); // Day of the week
+//     leftTextStyle = leftTextStyle.copyWith(
+//       fontWeight: FontWeight.normal, // Normal weight for other days
+//       color: Theme.of(context).colorScheme.onSurfaceVariant,
+//     );
+//   }
+//   return GestureDetector(
+//     onTap: () {
+//       journalNotifier.updateActuallySelectedDay(entry.date);
+//       journalNotifier.updateSelectedMonth(entry.date);
+//       Navigator.push(
+//         context,
+//         MaterialPageRoute(
+//           builder: (_) => JournalListScreen(selectedDate: entry.date),
+//         ),
+//       );
+//     },
+//     child: Container(
+//       padding: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+//       decoration: BoxDecoration(
+//         border: Border(
+//           left: BorderSide(
+//             color: Colors.grey, // You can change this color
+//             width: 2.0, // Adjust the width for thickness
+//           ),
+//         ),
+//         color: Colors.white,
+//         boxShadow: [
+//           BoxShadow(
+//             color: Colors.grey.withOpacity(0.2),
+//             spreadRadius: 1,
+//             blurRadius: 3,
+//             offset: Offset(1, 1), // changes position of shadow
+//           ),
+//         ],
+//       ),
+//       child: Column(
+//         crossAxisAlignment: CrossAxisAlignment.start,
+//         children: [
+//           Row(
+//             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+//             children: [
+//               Text(leftText, style: leftTextStyle),
+//               Text(
+//                 rightText,
+//                 style: TextStyle(
+//                   fontSize: 13,
+//                   color: Theme.of(context).colorScheme.onSurfaceVariant,
+//                 ),
+//               ),
+//             ],
+//           ),
+//           SizedBox(height: 8), // Spacing between the date row and content
+//           Text(
+//             entry.content,
+//             maxLines: 3, // Allow more lines for content preview
+//             overflow: TextOverflow.ellipsis,
+//             style: TextStyle(
+//               fontSize: 15,
+//               height: 1.4, // Improved line spacing
+//               color: Theme.of(context).colorScheme.onSurface,
+//             ),
+//           ),
+//         ],
+//       ),
+//     ),
+//   );
+// }

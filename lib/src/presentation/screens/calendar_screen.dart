@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart'; // For DateFormat if needed here
 // import 'package:timesheet_journal/src/backup.dart';
@@ -44,71 +43,110 @@ class CalendarScreen extends ConsumerWidget {
       appBar: AppBar(
         actions: [
           ElevatedButton.icon(
-              icon: Icon(Icons.download, size: 18),
-              label: Text('Export Month'),
-              onPressed: () async {
-                debugPrint(
-                    'Storage permission: ${await Permission.storage.status}');
-                debugPrint(
-                    'Manage external storage: ${await Permission.manageExternalStorage.status}');
-                bool hasPermission = await _requestStoragePermission(context);
-                if (!hasPermission) {
+            icon: Icon(Icons.download, size: 18),
+            label: Text('Export Month'),
+            onPressed: () async {
+              // NO PERMISSION CHECKS NEEDED ANYMORE!
+
+              final currentJournalState = journalNotifier.state;
+
+              final List<JournalEntry> monthEntriesToExport =
+                  currentJournalState.entries
+                      .where((entry) =>
+                          entry.date.year ==
+                              currentJournalState.selectedMonth.year &&
+                          entry.date.month ==
+                              currentJournalState.selectedMonth.month)
+                      .toList();
+
+              if (monthEntriesToExport.isEmpty) {
+                if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                        content:
-                            Text('Storage permission is required to export.')),
+                        content: Text(
+                            'No entries for ${DateFormat('MMMM yyyy').format(currentJournalState.selectedMonth)} to export.')),
                   );
-                  return;
                 }
-                final currentJournalState = journalNotifier.state;
+                return;
+              }
 
-                final List<JournalEntry> monthEntriesToExport =
-                    currentJournalState.entries
-                        .where((entry) =>
-                            entry.date.year ==
-                                currentJournalState.selectedMonth.year &&
-                            entry.date.month ==
-                                currentJournalState.selectedMonth.month)
-                        .toList();
+              // Call the NEW export function
+              await journalNotifier.exportToCsv(monthEntriesToExport,
+                  currentJournalState.selectedMonth, context);
+            },
+            style: ElevatedButton.styleFrom(
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+          // ElevatedButton.icon(
+          //     icon: Icon(Icons.download, size: 18),
+          //     label: Text('Export Month'),
+          //     onPressed: () async {
+          //       debugPrint(
+          //           'Storage permission: ${await Permission.storage.status}');
+          //       debugPrint(
+          //           'Manage external storage: ${await Permission.manageExternalStorage.status}');
+          //       bool hasPermission = await _requestStoragePermission(context);
+          //       if (!hasPermission) {
+          //         ScaffoldMessenger.of(context).showSnackBar(
+          //           SnackBar(
+          //               content:
+          //                   Text('Storage permission is required to export.')),
+          //         );
+          //         return;
+          //       }
+          //       final currentJournalState = journalNotifier.state;
 
-                if (monthEntriesToExport.isEmpty) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                          content: Text(
-                              'No entries for ${DateFormat('MMMM yyyy').format(currentJournalState.selectedMonth)} to export.')),
-                    );
-                  }
-                  return;
-                }
-                debugPrint('Entries to export: ${monthEntriesToExport.length}');
-                debugPrint(
-                    'Entries to export: ${monthEntriesToExport.map((e) => e.toString()).toList()}');
-                final String monthName = DateFormat('MMMM_yyyy')
-                    .format(currentJournalState.selectedMonth);
-                final String? filePath = await journalNotifier.exportToCsv(
-                    monthEntriesToExport, monthName, context);
+          //       final List<JournalEntry> monthEntriesToExport =
+          //           currentJournalState.entries
+          //               .where((entry) =>
+          //                   entry.date.year ==
+          //                       currentJournalState.selectedMonth.year &&
+          //                   entry.date.month ==
+          //                       currentJournalState.selectedMonth.month)
+          //               .toList();
 
-                if (context.mounted) {
-                  if (filePath != null && filePath.isNotEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Exported month to: $filePath')),
-                    );
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                          content: Text(
-                              'Export failed, was cancelled, or no entries to export.')),
-                    );
-                  }
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8)),
-              )),
+          //       if (monthEntriesToExport.isEmpty) {
+          //         if (context.mounted) {
+          //           ScaffoldMessenger.of(context).showSnackBar(
+          //             SnackBar(
+          //                 content: Text(
+          //                     'No entries for ${DateFormat('MMMM yyyy').format(currentJournalState.selectedMonth)} to export.')),
+          //           );
+          //         }
+          //         return;
+          //       }
+          //       debugPrint('Entries to export: ${monthEntriesToExport.length}');
+          //       debugPrint(
+          //           'Entries to export: ${monthEntriesToExport.map((e) => e.toString()).toList()}');
+          //       final String monthName = DateFormat('MMMM_yyyy')
+          //           .format(currentJournalState.selectedMonth);
+          //       final String? filePath = await journalNotifier.exportToCsv(
+          //           monthEntriesToExport, monthName, context);
+
+          //       if (context.mounted) {
+          //         if (filePath != null && filePath.isNotEmpty) {
+          //           ScaffoldMessenger.of(context).showSnackBar(
+          //             SnackBar(content: Text('Exported month to: $filePath')),
+          //           );
+          //         } else {
+          //           ScaffoldMessenger.of(context).showSnackBar(
+          //             SnackBar(
+          //                 content: Text(
+          //                     'Export failed, was cancelled, or no entries to export.')),
+          //           );
+          //         }
+          //       }
+          //     },
+          //     style: ElevatedButton.styleFrom(
+          //       padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          //       elevation: 0,
+          //       shape: RoundedRectangleBorder(
+          //           borderRadius: BorderRadius.circular(8)),
+          //     )),
         ],
       ),
       body: Container(
@@ -287,70 +325,7 @@ class CalendarScreen extends ConsumerWidget {
   }
 }
 
-Future<bool> _requestStoragePermission(BuildContext context) async {
-  if (Platform.isAndroid) {
-    if (await Permission.manageExternalStorage.isGranted) {
-      debugPrint('Manage external storage permission already granted.');
-      return true;
-    }
 
-    PermissionStatus manageStorageStatus =
-        await Permission.manageExternalStorage.request();
-    if (manageStorageStatus.isGranted) {
-      debugPrint('Manage external storage permission granted.');
-      return true;
-    } else if (manageStorageStatus.isPermanentlyDenied) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content:
-                const Text('Please enable storage permission in settings.'),
-            action: SnackBarAction(
-              label: 'Open Settings',
-              onPressed: () => openAppSettings(),
-            ),
-          ),
-        );
-      }
-      debugPrint('Manage external storage permanently denied.');
-      return false;
-    }
-
-    if (await Permission.storage.isGranted) {
-      debugPrint('Storage permission already granted.');
-      return true;
-    }
-
-    PermissionStatus storageStatus = await Permission.storage.request();
-    if (storageStatus.isGranted) {
-      debugPrint('Storage permission granted.');
-      return true;
-    } else if (storageStatus.isPermanentlyDenied) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content:
-                const Text('Please enable storage permission in settings.'),
-            action: SnackBarAction(
-              label: 'Open Settings',
-              onPressed: () => openAppSettings(),
-            ),
-          ),
-        );
-      }
-      debugPrint('Storage permission permanently denied.');
-      return false;
-    }
-    debugPrint('Storage permission denied: $storageStatus');
-    return false;
-  } else if (Platform.isIOS) {
-    debugPrint('iOS platform: No storage permission required.');
-    return true;
-  } else {
-    debugPrint('Non-mobile platform: No storage permission required.');
-    return true;
-  }
-}
 
 // Ensure isSameDay is accessible, placing it outside the class or in a utility file
 bool isSameDay(DateTime a, DateTime b) {

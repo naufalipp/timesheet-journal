@@ -4,12 +4,14 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:csv/csv.dart';
 import 'package:excel/excel.dart'; // For Excel, Sheet, TextCellValue, etc.
+import 'package:file_saver/file_saver.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart'; // For debugPrint
+import 'package:flutter_file_dialog/flutter_file_dialog.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:open_file/open_file.dart';
+import 'package:open_file_plus/open_file_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../domain/entities/journal_entry.dart'; // Your JournalEntry model
@@ -40,6 +42,14 @@ class JournalNotifier extends StateNotifier<JournalState> {
     }
   }
 
+    Future<void> updateEntry(JournalEntry entry, String newContent) async {
+    // Update the content of the passed entry object
+    entry.content = newContent;
+    // The repository will now call .save() on this modified object
+    await _repository.editEntry(entry);
+    await loadEntries(); // Reload to reflect the changes.
+  }
+
   Future<void> deleteJournalEntry(JournalEntry entryToDelete) async {
     final key = await _repository.getKeyForEntry(entryToDelete);
 
@@ -52,275 +62,124 @@ class JournalNotifier extends StateNotifier<JournalState> {
     }
   }
 
-  Future<String?> exportToCsv(List<JournalEntry> monthEntries,
-      String monthNameForFile, BuildContext context) async {
-    if (monthNameForFile.isEmpty) {
-      debugPrint("Notifier.exportToCsv: Invalid monthNameForFile provided.");
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Invalid month name for export.')),
-        );
-      }
-      return null;
-    }
-
+  Future<void> exportToCsv(List<JournalEntry> monthEntries,
+      DateTime selectedMonth, BuildContext context) async {
     try {
-      // Parse the month and year from monthNameForFile (format: MMMM_yyyy, e.g., May_2025)
-      final dateFormat = DateFormat('MMMM_yyyy');
-      DateTime monthDate;
-      try {
-        monthDate = dateFormat.parse(monthNameForFile);
-      } catch (e) {
-        debugPrint(
-            'Notifier.exportToCsv: Invalid monthNameForFile format: $monthNameForFile');
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-                content: Text('Invalid month format. Expected: May_2025')),
-          );
-        }
-        return null;
-      }
-
-      // Get the number of days in the month
-      final daysInMonth = DateTime(monthDate.year, monthDate.month + 1, 0).day;
-
-      // Group entries by date (yyyy-MM-dd) and collect content
+      // --- Step 1: Your data preparation logic remains the same ---
+      final daysInMonth =
+          DateTime(selectedMonth.year, selectedMonth.month + 1, 0).day;
       final Map<String, List<JournalEntry>> entryMap = {};
       for (var entry in monthEntries) {
-        if (entry.date == null || entry.content == null) {
-          debugPrint(
-              'Notifier.exportToCsv: Invalid entry - date or content is null: $entry');
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Invalid journal entry data.')),
-            );
-          }
-          return null;
-        }
         final dateKey = DateFormat('yyyy-MM-dd').format(entry.date);
         entryMap.putIfAbsent(dateKey, () => []).add(entry);
       }
-
-      // Create CSV data
       List<List<String>> rows = [
-        ['Date', 'Day', 'Title', 'Content'], // Headers
+        ['Date', 'Day', 'Title', 'Content']
       ];
-
-      // Add a row for every day in the month
       for (int day = 1; day <= daysInMonth; day++) {
-        final currentDate = DateTime(monthDate.year, monthDate.month, day);
+        // ... (the rest of your CSV creation loop is perfect and stays here)
+        final currentDate =
+            DateTime(selectedMonth.year, selectedMonth.month, day);
         final dateKey = DateFormat('yyyy-MM-dd').format(currentDate);
         final entries = entryMap[dateKey];
-
         if (entries != null && entries.isNotEmpty) {
-          // Merge content for all entries on this date
-          final mergedContent =
-              entries.map((e) => e.content).join(', - '); // Use ; as delimiter
+          final mergedContent = entries.map((e) => e.content).join('; ');
           rows.add([
             DateFormat('dd-MM-yyyy').format(currentDate),
             DateFormat('EEEE').format(currentDate),
             '',
-            mergedContent,
+            mergedContent
           ]);
         } else {
-          // No entry for this date, add a row with empty content
           rows.add([
             DateFormat('dd-MM-yyyy').format(currentDate),
             DateFormat('EEEE').format(currentDate),
             '',
-            '',
+            ''
           ]);
         }
       }
-
-      // Convert to CSV
       String csv = const ListToCsvConverter().convert(rows);
-      List<int> bytes = utf8.encode(csv);
-      debugPrint('Notifier.exportToCsv: Generated ${bytes.length} bytes.');
 
-      // Generate file name
-      String suggestedFileName =
-          'JournalExport_${monthNameForFile.replaceAll(RegExp(r'[^\w\s-]'), '')}.csv';
+      // --- Step 2: Save the CSV to a temporary file in the app's cache ---
+      final tempDir = await getTemporaryDirectory();
+      final monthNameForFile = DateFormat('MMMM_yyyy').format(selectedMonth);
+      final fileName = 'JournalExport_$monthNameForFile.csv';
+      final tempFile = File('${tempDir.path}/$fileName');
+      await tempFile.writeAsString(csv);
+      debugPrint('Created temporary file at: ${tempFile.path}');
 
-      // Try to save to public Downloads folder
-      String outputFile = '/storage/emulated/0/Download/$suggestedFileName';
-      Directory? fallbackDirectory;
+      // --- Step 3: Present the "Save As..." dialog to the user ---
+      final params = SaveFileDialogParams(sourceFilePath: tempFile.path);
+      final String? finalPath =
+          await FlutterFileDialog.saveFile(params: params);
 
-      // Check if public Downloads folder is accessible
-      try {
-        final downloadsDir = Directory('/storage/emulated/0/Download');
-        if (!await downloadsDir.exists()) {
-          debugPrint(
-              'Notifier.exportToCsv: Public Downloads directory does not exist.');
-          throw Exception('Public Downloads directory not found');
-        }
-      } catch (e) {
-        debugPrint(
-            'Notifier.exportToCsv: Error accessing public Downloads directory: $e');
-        // Fallback to app's documents directory
-        fallbackDirectory = await getApplicationDocumentsDirectory();
-        outputFile = '${fallbackDirectory.path}/$suggestedFileName';
-      }
+      if (finalPath != null) {
+        debugPrint('File successfully saved to public storage: $finalPath');
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Exported: ${fileName}'),
+              // action: SnackBarAction(
+              //   label: 'Open',
+              //   onPressed: () async {
+              //     if (finalPath != null) {
+              //       try {
+              //         debugPrint('Attempting to open path: $finalPath');
 
-      // Ensure unique file name to avoid overwriting
-      int counter = 1;
-      String basePath =
-          outputFile.substring(0, outputFile.length - '.csv'.length);
-      while (await File(outputFile).exists()) {
-        outputFile = '${basePath}_$counter.csv';
-        counter++;
-      }
+              //         // THE CHANGE IS HERE: We are adding the 'type' parameter
+              //         final result = await OpenFile.open(
+              //           finalPath,
+              //           type:
+              //               "text/csv", // Explicitly tell it this is a CSV file
+              //         );
 
-      final File file = File(outputFile);
-      await file.writeAsBytes(bytes, flush: true);
+              //         debugPrint(
+              //             'OpenFile result: ${result.type} ${result.message}');
 
-      debugPrint('Notifier.exportToCsv: Exported successfully to: $outputFile');
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Exported to Downloads: $suggestedFileName'),
-            action: SnackBarAction(
-              label: 'Open',
-              onPressed: () async {
-                final result = await OpenFile.open(outputFile);
-                if (result.type != ResultType.done && context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                        content:
-                            Text('Failed to open file: ${result.message}')),
-                  );
-                }
-              },
+              //         // Add a check here for the error message
+              //         if (result.type == ResultType.fileNotFound) {
+              //           if (context.mounted) {
+              //             ScaffoldMessenger.of(context).showSnackBar(
+              //               SnackBar(
+              //                   content: Text(
+              //                       'Error: File not found. The path may be invalid.')),
+              //             );
+              //           }
+              //         } else if (result.type == ResultType.noAppToOpen) {
+              //           if (context.mounted) {
+              //             ScaffoldMessenger.of(context).showSnackBar(
+              //               SnackBar(
+              //                   content: Text(
+              //                       'Error: No application found to open CSV files.')),
+              //             );
+              //           }
+              //         }
+              //       } catch (e) {
+              //         debugPrint('Error opening file: $e');
+              //         if (context.mounted) {
+              //           ScaffoldMessenger.of(context).showSnackBar(
+              //             SnackBar(content: Text('Could not open file: $e')),
+              //           );
+              //         }
+              //       }
+              //     }
+              //   },
+              // ),
             ),
-          ),
-        );
+          );
+        }
       }
-      return outputFile;
     } catch (e, s) {
-      debugPrint('Notifier.exportToCsv: Error: $e');
-      debugPrint('Notifier.exportToCsv: Stack trace: $s');
+      debugPrint('Export failed. Error: $e');
+      debugPrint('Stack trace: $s');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Export failed: $e')),
         );
       }
-      return null;
     }
   }
-
-  // Future<String?> exportToCsv(List<JournalEntry> monthEntries,
-  //     String monthNameForFile, BuildContext context) async {
-  //   if (monthEntries.isEmpty) {
-  //     debugPrint("Notifier.exportToCsv: No entries received to export.");
-  //     if (context.mounted) {
-  //       ScaffoldMessenger.of(context).showSnackBar(
-  //         const SnackBar(content: Text('No entries to export.')),
-  //       );
-  //     }
-  //     return null;
-  //   }
-
-  //   try {
-  //     // Validate monthEntries data
-  //     for (var entry in monthEntries) {
-  //       if (entry.date == null || entry.content == null) {
-  //         debugPrint(
-  //             'Notifier.exportToCsv: Invalid entry - date or content is null: $entry');
-  //         if (context.mounted) {
-  //           ScaffoldMessenger.of(context).showSnackBar(
-  //             const SnackBar(content: Text('Invalid journal entry data.')),
-  //           );
-  //         }
-  //         return null;
-  //       }
-  //     }
-
-  //     // Create CSV data
-  //     List<List<String>> rows = [
-  //       ['Date', 'Title', 'Content'], // Headers
-  //     ];
-
-  //     for (var entry in monthEntries) {
-  //       rows.add([
-  //         DateFormat('yyyy-MM-dd HH:mm').format(entry.date),
-  //         '',
-  //         entry.content,
-  //       ]);
-  //     }
-
-  //     String csv = const ListToCsvConverter().convert(rows);
-  //     List<int> bytes = utf8.encode(csv);
-  //     debugPrint('Notifier.exportToCsv: Generated ${bytes.length} bytes.');
-
-  //     String suggestedFileName =
-  //         'JournalExport_${monthNameForFile.replaceAll(RegExp(r'[^\w\s-]'), '')}.csv';
-
-  //     // Try to save to public Downloads folder
-  //     String outputFile = '/storage/emulated/0/Download/$suggestedFileName';
-  //     Directory? fallbackDirectory;
-
-  //     // Check if public Downloads folder is accessible
-  //     try {
-  //       final downloadsDir = Directory('/storage/emulated/0/Download');
-  //       if (!await downloadsDir.exists()) {
-  //         debugPrint(
-  //             'Notifier.exportToCsv: Public Downloads directory does not exist.');
-  //         throw Exception('Public Downloads directory not found');
-  //       }
-  //     } catch (e) {
-  //       debugPrint(
-  //           'Notifier.exportToCsv: Error accessing public Downloads directory: $e');
-  //       // Fallback to app's documents directory
-  //       fallbackDirectory = await getApplicationDocumentsDirectory();
-  //       outputFile = '${fallbackDirectory.path}/$suggestedFileName';
-  //     }
-
-  //     // Ensure unique file name to avoid overwriting
-  //     int counter = 1;
-  //     String basePath =
-  //         outputFile.substring(0, outputFile.length - '.csv'.length);
-  //     while (await File(outputFile).exists()) {
-  //       outputFile = '{$basePath}_$counter.csv';
-  //       counter++;
-  //     }
-
-  //     final File file = File(outputFile);
-  //     await file.writeAsBytes(bytes, flush: true);
-
-  //     debugPrint('Notifier.exportToCsv: Exported successfully to: $outputFile');
-  //     if (context.mounted) {
-  //       ScaffoldMessenger.of(context).showSnackBar(
-  //         SnackBar(
-  //           content: Text('Exported to Downloads: $suggestedFileName'),
-  //           action: SnackBarAction(
-  //             label: 'Open',
-  //             onPressed: () async {
-  //               final result = await OpenFile.open(outputFile);
-  //               if (result.type != ResultType.done && context.mounted) {
-  //                 ScaffoldMessenger.of(context).showSnackBar(
-  //                   SnackBar(
-  //                       content:
-  //                           Text('Failed to open file: ${result.message}')),
-  //                 );
-  //               }
-  //             },
-  //           ),
-  //         ),
-  //       );
-  //     }
-  //     return outputFile;
-  //   } catch (e, s) {
-  //     debugPrint('Notifier.exportToCsv: Error: $e');
-  //     debugPrint('Notifier.exportToCsv: Stack trace: $s');
-  //     if (context.mounted) {
-  //       ScaffoldMessenger.of(context).showSnackBar(
-  //         SnackBar(content: Text('Export failed: $e')),
-  //       );
-  //     }
-  //     return null;
-  //   }
-  // }
 
   void updateSelectedMonth(DateTime newMonth) {
     // ... your existing code ...

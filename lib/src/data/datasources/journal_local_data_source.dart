@@ -11,6 +11,11 @@ class JournalLocalDataSource {
     await box.put(entry.date.toIso8601String(), entry);
   }
 
+  Future<void>editEntry(JournalEntry entry) async {
+    // Using date as string key; ensure uniqueness or consider auto-incrementing keys if needed
+    await entry.save();
+  }
+
   Future<void> deleteEntry(dynamic key) async {
     await box.delete(key);
   }

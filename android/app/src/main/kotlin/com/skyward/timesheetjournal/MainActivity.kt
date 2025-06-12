@@ -1,4 +1,4 @@
-package com.example.timesheet_journal
+package com.skyward.timesheetjournal
 
 import io.flutter.embedding.android.FlutterActivity
 
